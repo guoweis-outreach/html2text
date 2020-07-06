@@ -28,7 +28,7 @@ type Options struct {
 	// For the list of atoms that we'll not dive in.
 	OmitAtoms       map[atom.Atom]bool
 	OmitHeaderAtoms map[atom.Atom]bool
-	HonorPre        bool
+	IgnorePre       bool
 	HeaderWriter    io.StringWriter
 }
 
@@ -306,7 +306,7 @@ func (ctx *textifyTraverseContext) handleElement(node *html.Node) error {
 		return ctx.traverseChildren(node)
 
 	case atom.Pre:
-		ctx.isPre = true && ctx.options.HonorPre
+		ctx.isPre = true && !ctx.options.IgnorePre
 		err := ctx.traverseChildren(node)
 		ctx.isPre = false
 		return err
