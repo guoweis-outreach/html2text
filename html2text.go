@@ -191,7 +191,7 @@ func (ctx *textifyTraverseContext) handleElement(node *html.Node) error {
 		return ctx.emit("\n")
 
 	case atom.H1, atom.H2, atom.H3:
-		subCtx := textifyTraverseContext{}
+		subCtx := ctx.clone()
 		if err := subCtx.traverseChildren(node); err != nil {
 			return err
 		}
@@ -271,7 +271,7 @@ func (ctx *textifyTraverseContext) handleElement(node *html.Node) error {
 		return ctx.emit("\n")
 
 	case atom.B, atom.Strong:
-		subCtx := textifyTraverseContext{}
+		subCtx := ctx.clone()
 		subCtx.endsWithSpace = true
 		if err := subCtx.traverseChildren(node); err != nil {
 			return err
@@ -594,6 +594,12 @@ func (ctx *textifyTraverseContext) renderEachChild(node *html.Node) (string, err
 		}
 	}
 	return buf.String(), nil
+}
+
+func (ctx *textifyTraverseContext) clone() *textifyTraverseContext {
+	return &textifyTraverseContext{
+		options: ctx.options,
+	}
 }
 
 func getAttrVal(node *html.Node, attrName string) string {
