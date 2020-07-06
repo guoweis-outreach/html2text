@@ -26,8 +26,10 @@ type Options struct {
 	OmitLinks           bool                 // Turns on omitting links
 
 	// For the list of atoms that we'll not dive in.
-	OmitAtoms map[atom.Atom]bool
-	HonorPre  bool
+	OmitAtoms       map[atom.Atom]bool
+	OmitHeaderAtoms map[atom.Atom]bool
+	HonorPre        bool
+	HeaderWriter    io.StringWriter
 }
 
 // PrettyTablesOptions overrides tablewriter behaviors
@@ -83,6 +85,15 @@ func FromHTMLNode(doc *html.Node, o ...Options) (string, error) {
 		buf:     bytes.Buffer{},
 		options: options,
 	}
+	if options.HeaderWriter != nil {
+		ctx.headerBuf = bytes.Buffer{}
+	} else {
+		ctx.headerBuf = ctx.buf
+	}
+	// if we have no omitHeaderAtom, reuse what's availabe from the body.
+	if ctx.options.OmitHeaderAtoms == nil {
+		ctx.options.OmitHeaderAtoms = ctx.options.OmitAtoms
+	}
 	if err := ctx.traverse(doc); err != nil {
 		return "", err
 	}
@@ -90,6 +101,12 @@ func FromHTMLNode(doc *html.Node, o ...Options) (string, error) {
 	text := strings.TrimSpace(newlineRe.ReplaceAllString(
 		strings.Replace(ctx.buf.String(), "\n ", "\n", -1), "\n\n"),
 	)
+	if options.HeaderWriter != nil {
+		textHeader := strings.TrimSpace(newlineRe.ReplaceAllString(
+			strings.Replace(ctx.headerBuf.String(), "\n ", "\n", -1), "\n\n"),
+		)
+		options.HeaderWriter.WriteString(textHeader)
+	}
 	return text, nil
 }
 
@@ -124,7 +141,8 @@ var (
 
 // traverseTableCtx holds text-related context.
 type textifyTraverseContext struct {
-	buf bytes.Buffer
+	buf       bytes.Buffer
+	headerBuf bytes.Buffer
 
 	prefix          string
 	tableCtx        tableTraverseContext
@@ -134,6 +152,7 @@ type textifyTraverseContext struct {
 	blockquoteLevel int
 	lineLength      int
 	isPre           bool
+	isInHeader      bool
 }
 
 // tableTraverseContext holds table ASCII-form related context.
@@ -156,7 +175,7 @@ func (tableCtx *tableTraverseContext) init() {
 func (ctx *textifyTraverseContext) handleElement(node *html.Node) error {
 	ctx.justClosedDiv = false
 
-	if ctx.options.OmitAtoms[node.DataAtom] {
+	if ctx.options.OmitAtoms != nil && ctx.options.OmitAtoms[node.DataAtom] {
 		return nil
 	}
 
@@ -296,9 +315,23 @@ func (ctx *textifyTraverseContext) handleElement(node *html.Node) error {
 		// Ignore the subtree.
 		return nil
 
+	case atom.Header:
+		ctx.setHeaderStatus(true)
+		defer ctx.setHeaderStatus(false)
+		return ctx.traverseChildren(node)
+
 	default:
 		return ctx.traverseChildren(node)
 	}
+}
+
+func (ctx *textifyTraverseContext) setHeaderStatus(status bool) {
+	if ctx.isInHeader == status {
+		panic(false)
+	}
+	ctx.isInHeader = status
+	ctx.buf, ctx.headerBuf = ctx.headerBuf, ctx.buf
+	ctx.options.OmitAtoms, ctx.options.OmitHeaderAtoms = ctx.options.OmitHeaderAtoms, ctx.options.OmitAtoms
 }
 
 // paragraphHandler renders node children surrounded by double newlines.
