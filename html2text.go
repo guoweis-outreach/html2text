@@ -19,6 +19,12 @@ var DefaultOmitAtoms = map[atom.Atom]bool{
 	atom.Noscript: true,
 }
 
+type EmitOptions struct {
+	OmitAtoms      map[atom.Atom]bool
+	SkipAnnotation bool
+	IgnorePre      bool
+}
+
 // Options provide toggles and overrides to control specific rendering behaviors.
 type Options struct {
 	PrettyTables        bool                 // Turns on pretty ASCII rendering for table elements.
@@ -26,10 +32,9 @@ type Options struct {
 	OmitLinks           bool                 // Turns on omitting links
 
 	// For the list of atoms that we'll not dive in.
-	OmitAtoms       map[atom.Atom]bool
-	OmitHeaderAtoms map[atom.Atom]bool
-	IgnorePre       bool
-	HeaderWriter    io.StringWriter
+	EmitOptions       *EmitOptions
+	HeaderEmitOptions *EmitOptions
+	HeaderWriter      io.StringWriter
 }
 
 // PrettyTablesOptions overrides tablewriter behaviors
@@ -91,8 +96,8 @@ func FromHTMLNode(doc *html.Node, o ...Options) (string, error) {
 		ctx.headerBuf = ctx.buf
 	}
 	// if we have no omitHeaderAtom, reuse what's availabe from the body.
-	if ctx.options.OmitHeaderAtoms == nil {
-		ctx.options.OmitHeaderAtoms = ctx.options.OmitAtoms
+	if ctx.options.HeaderEmitOptions == nil {
+		ctx.options.HeaderEmitOptions = ctx.options.EmitOptions
 	}
 	if err := ctx.traverse(doc); err != nil {
 		return "", err
@@ -175,7 +180,9 @@ func (tableCtx *tableTraverseContext) init() {
 func (ctx *textifyTraverseContext) handleElement(node *html.Node) error {
 	ctx.justClosedDiv = false
 
-	if ctx.options.OmitAtoms != nil && ctx.options.OmitAtoms[node.DataAtom] {
+	if ctx.options.EmitOptions != nil &&
+		ctx.options.EmitOptions.OmitAtoms != nil &&
+		ctx.options.EmitOptions.OmitAtoms[node.DataAtom] {
 		return nil
 	}
 
@@ -197,10 +204,12 @@ func (ctx *textifyTraverseContext) handleElement(node *html.Node) error {
 			}
 		}
 		var divider string
-		if node.DataAtom == atom.H1 {
-			divider = strings.Repeat("*", dividerLen)
-		} else {
-			divider = strings.Repeat("-", dividerLen)
+		if !ctx.shouldSkipAnnotation() {
+			if node.DataAtom == atom.H1 {
+				divider = strings.Repeat("*", dividerLen)
+			} else {
+				divider = strings.Repeat("-", dividerLen)
+			}
 		}
 
 		if node.DataAtom == atom.H3 {
@@ -210,7 +219,9 @@ func (ctx *textifyTraverseContext) handleElement(node *html.Node) error {
 
 	case atom.Blockquote:
 		ctx.blockquoteLevel++
-		ctx.prefix = strings.Repeat(">", ctx.blockquoteLevel) + " "
+		if !ctx.shouldSkipAnnotation() {
+			ctx.prefix = strings.Repeat(">", ctx.blockquoteLevel) + " "
+		}
 		if err := ctx.emit("\n"); err != nil {
 			return err
 		}
@@ -223,7 +234,9 @@ func (ctx *textifyTraverseContext) handleElement(node *html.Node) error {
 			return err
 		}
 		ctx.blockquoteLevel--
-		ctx.prefix = strings.Repeat(">", ctx.blockquoteLevel)
+		if !ctx.shouldSkipAnnotation() {
+			ctx.prefix = strings.Repeat(">", ctx.blockquoteLevel)
+		}
 		if ctx.blockquoteLevel > 0 {
 			ctx.prefix += " "
 		}
@@ -246,10 +259,11 @@ func (ctx *textifyTraverseContext) handleElement(node *html.Node) error {
 		return err
 
 	case atom.Li:
-		if err := ctx.emit("* "); err != nil {
-			return err
+		if !ctx.shouldSkipAnnotation() {
+			if err := ctx.emit("* "); err != nil {
+				return err
+			}
 		}
-
 		if err := ctx.traverseChildren(node); err != nil {
 			return err
 		}
@@ -263,7 +277,10 @@ func (ctx *textifyTraverseContext) handleElement(node *html.Node) error {
 			return err
 		}
 		str := subCtx.buf.String()
-		return ctx.emit("*" + str + "*")
+		if !ctx.shouldSkipAnnotation() {
+			str = "*" + str + "*"
+		}
+		return ctx.emit(str)
 
 	case atom.A:
 		linkText := ""
@@ -306,7 +323,7 @@ func (ctx *textifyTraverseContext) handleElement(node *html.Node) error {
 		return ctx.traverseChildren(node)
 
 	case atom.Pre:
-		ctx.isPre = true && !ctx.options.IgnorePre
+		ctx.isPre = true && !ctx.shouldIgnorePre()
 		err := ctx.traverseChildren(node)
 		ctx.isPre = false
 		return err
@@ -331,7 +348,7 @@ func (ctx *textifyTraverseContext) setHeaderStatus(status bool) {
 	}
 	ctx.isInHeader = status
 	ctx.buf, ctx.headerBuf = ctx.headerBuf, ctx.buf
-	ctx.options.OmitAtoms, ctx.options.OmitHeaderAtoms = ctx.options.OmitHeaderAtoms, ctx.options.OmitAtoms
+	ctx.options.EmitOptions, ctx.options.HeaderEmitOptions = ctx.options.HeaderEmitOptions, ctx.options.EmitOptions
 }
 
 // paragraphHandler renders node children surrounded by double newlines.
@@ -548,6 +565,14 @@ func (ctx *textifyTraverseContext) normalizeHrefLink(link string) string {
 	link = strings.TrimSpace(link)
 	link = strings.TrimPrefix(link, "mailto:")
 	return link
+}
+
+func (ctx *textifyTraverseContext) shouldSkipAnnotation() bool {
+	return ctx.options.EmitOptions != nil && ctx.options.EmitOptions.SkipAnnotation
+}
+
+func (ctx *textifyTraverseContext) shouldIgnorePre() bool {
+	return ctx.options.EmitOptions != nil && ctx.options.EmitOptions.IgnorePre
 }
 
 // renderEachChild visits each direct child of a node and collects the sequence of
