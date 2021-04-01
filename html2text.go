@@ -157,7 +157,9 @@ type textifyTraverseContext struct {
 	blockquoteLevel int
 	lineLength      int
 	isPre           bool
-	isInHeader      bool
+
+	// html5 doesn't allow nested header but we still see this when crawling
+	headerDepth int
 }
 
 // tableTraverseContext holds table ASCII-form related context.
@@ -343,10 +345,15 @@ func (ctx *textifyTraverseContext) handleElement(node *html.Node) error {
 }
 
 func (ctx *textifyTraverseContext) setHeaderStatus(status bool) {
-	if ctx.isInHeader == status {
-		panic(false)
+	curHeader := ctx.headerDepth
+	if status {
+		ctx.headerDepth++
+	} else {
+		ctx.headerDepth--
 	}
-	ctx.isInHeader = status
+	if curHeader+ctx.headerDepth != 1 {
+		return
+	}
 	ctx.buf, ctx.headerBuf = ctx.headerBuf, ctx.buf
 	ctx.options.EmitOptions, ctx.options.HeaderEmitOptions = ctx.options.HeaderEmitOptions, ctx.options.EmitOptions
 }
