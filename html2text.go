@@ -348,7 +348,7 @@ func (ctx *textifyTraverseContext) setHeaderStatus(status bool) {
 	curHeader := ctx.headerDepth
 	if status {
 		ctx.headerDepth++
-	} else {
+	} else if ctx.headerDepth > 0 {
 		ctx.headerDepth--
 	}
 	if curHeader+ctx.headerDepth != 1 {
