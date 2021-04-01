@@ -786,6 +786,17 @@ func TestIgnoreStylesScriptsHead(t *testing.T) {
 	}
 }
 
+func TestHeaders(t *testing.T) {
+	input := `
+  <header>
+    inside first header
+    <title>title</title>
+    <header> inside header </header>
+  </header>
+ `
+	FromString(input)
+}
+
 func TestText(t *testing.T) {
 	testCases := []struct {
 		input string
